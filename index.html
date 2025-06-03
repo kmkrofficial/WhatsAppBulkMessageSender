@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>WhatsApp Bulk Sender</title>
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';" />
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="logo-container">
+            <img src="assets/logo.png" alt="App Logo" id="appLogo">
+        </div>
+        <h1>WhatsApp Bulk Message Sender</h1>
+
+        <div class="form-group">
+            <label for="excelFile">Excel File:</label>
+            <button id="selectFileBtn">Select Excel File</button>
+            <span id="filePath" class="file-path-display">No file selected</span>
+            <input type="file" id="excelFileInput" accept=".xlsx, .xls" style="display: none;">
+        </div>
+
+        <div class="form-group">
+            <label for="phoneNumberColumn">Phone Number Column (from Excel):</label>
+            <select id="phoneNumberColumn">
+                <option value="">-- Select Excel File First --</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="nameColumn">Name Column (from Excel):</label>
+            <select id="nameColumn">
+                <option value="">-- Select Excel File First --</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="screenshotDir">Screenshot Directory (for failures):</label>
+            <input type="text" id="screenshotDirInput" readonly placeholder="Using default: ./failure_screenshots">
+            <button id="selectScreenshotDirBtn">Change Directory</button>
+            <button id="useDefaultScreenshotDirBtn">Use Default</button>
+        </div>
+
+        <div class="form-group">
+            <label for="messageTemplate">Message Template (use {{Name}} for personalization):</label>
+            <textarea id="messageTemplate" rows="4">Hello {{Name}}, This is a sample message!</textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="countryCode">Default Country Code (e.g., 91 for India, 1 for US):</label>
+            <input type="text" id="countryCode" value="91">
+        </div>
+
+        <button id="startBtn">Start Sending Messages</button>
+
+        <h2>Log Output:</h2>
+        <pre id="logOutput"></pre>
+    </div>
+
+    <script src="./renderer.js"></script>
+</body>
+</html>

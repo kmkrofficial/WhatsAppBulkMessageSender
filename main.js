@@ -1,217 +1,285 @@
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const path = require('path');
 const puppeteer = require('puppeteer');
-const xlsx = require('xlsx');
+const xlsx =require('xlsx');
 const fs = require('fs');
 
-// --- Configuration ---
-const EXCEL_FILE_PATH = './Book1.xlsx'; // Path to your Excel file
-const PHONE_NUMBER_COLUMN = 'Phone Number'; // Column name for phone numbers
-const NAME_COLUMN = 'Name';                // Column name for names
-const MESSAGE_TEMPLATE = `Hello {{Name}}, This is a sample message!`; // Personalize with {{Name}}
-const COUNTRY_CODE = '91'; // Optional: Default country code if not in Excel (e.g., '91' for India, '1' for US). Leave empty if numbers are full E.164.
+if (require('electron-squirrel-startup')) return;
 
-// Delays (in milliseconds) - VERY IMPORTANT to avoid being banned
-const DELAY_AFTER_LOGIN_CHECK = 5000; // Time to wait after checking login status
-const DELAY_BETWEEN_MESSAGES_MIN = 5000; // Minimum delay between sending messages
-const DELAY_BETWEEN_MESSAGES_MAX = 8000; // Maximum delay between sending messages
-const DELAY_PAGE_LOAD = 6000;          // Wait for chat page to load
-const DELAY_AFTER_SEND = 3000;            // Short delay after clicking send
+// --- Configuration - Snappier Values ---
+const DELAY_AFTER_LOGIN_CHECK = 2500; // Reduced
+const DELAY_BETWEEN_MESSAGES_MIN = 2000; // Reduced
+const DELAY_BETWEEN_MESSAGES_MAX = 4000; // Reduced
+const DELAY_PAGE_LOAD = 3500; // Reduced (after navigating to chat URL)
+const DELAY_AFTER_SEND = 1500; // Reduced
+const DELAY_AFTER_TYPING_COMPLETES = 300; // Reduced (after all typing is done)
 
-// Puppeteer launch options
 const LAUNCH_OPTIONS = {
-    headless: false, // Set to true for background, false to see the browser
-    userDataDir: './whatsapp_session', // Saves session data (cookies, etc.) to avoid frequent QR scans
-    args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        // '--single-process', // Could cause issues
-        '--disable-gpu'
-    ]
+    headless: false,
+    userDataDir: path.join(app.getPath('userData'), 'whatsapp_session_electron'),
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--disable-gpu']
 };
 
-// Selectors (these might change if WhatsApp Web updates its UI)
-const QR_CODE_SELECTOR = 'canvas[aria-label="Scan this QR code to link a device!"]';
-const SEARCH_INPUT_SELECTOR_AFTER_LOGIN = 'div[aria-label="Chat list"]'; // Try both
-const MESSAGE_INPUT_SELECTOR = 'footer div[role="textbox"][contenteditable="true"]'; // Common selector for the message box
-const SEND_BUTTON_SELECTOR = 'button[aria-label="Send"], span[data-icon="send"]'; // Common selector for the send button
+// Selectors (remain the same)
+const QR_CODE_SELECTOR = 'canvas[aria-label="Scan this QR code to link a device!"], div[data-testid="qrcode"]';
+const SEARCH_INPUT_SELECTOR_AFTER_LOGIN = 'div[aria-label="Chat list"], div[data-testid="chat-list"]';
+const MESSAGE_INPUT_SELECTOR = 'footer div[contenteditable="true"][data-tab="10"], footer div[contenteditable="true"][data-tab="9"]';
+const SEND_BUTTON_SELECTOR = 'button[aria-label="Send"], span[data-icon="send"]';
+const INVALID_NUMBER_POPUP_TEXT_SELECTOR = 'div[role="button"]';
+const OK_BUTTON_SELECTOR_INVALID_NUMBER = 'div[data-testid="popup-controls-ok"]';
 
-// --- Helper Functions ---
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+let mainWindow;
+
+function createWindow() {
+    mainWindow = new BrowserWindow({
+        width: 850,
+        height: 780,
+        icon: path.join(__dirname, 'assets/logo.png'),
+        webPreferences: { nodeIntegration: true, contextIsolation: false, devTools: !app.isPackaged }
+    });
+    mainWindow.loadFile('index.html');
+    mainWindow.on('closed', () => { mainWindow = null; });
 }
 
-function getRandomDelay(min, max) {
-    return Math.floor(Math.random() * (max - min + 1) + min);
-}
+app.whenReady().then(() => {
+    createWindow();
+    app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+});
+
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+
+ipcMain.on('open-file-dialog', (event) => {
+    dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        filters: [{ name: 'Excel Files', extensions: ['xlsx', 'xls'] }]
+    }).then(result => {
+        if (!result.canceled && result.filePaths.length > 0) event.sender.send('selected-file', result.filePaths[0]);
+    }).catch(err => {
+        console.error("File dialog error:", err);
+        sendLog(event.sender, `File dialog error: ${err.message}`, 'error');
+    });
+});
+
+ipcMain.on('get-excel-headers', async (event, filePath) => {
+    try {
+        if (!filePath) { event.sender.send('excel-headers-list', { error: "File path is missing." }); return; }
+        const workbook = xlsx.readFile(filePath, { sheetRows: 1 });
+        const sheetName = workbook.SheetNames[0];
+        if (!sheetName) { event.sender.send('excel-headers-list', { error: "No sheets found." }); return; }
+        const sheet = workbook.Sheets[sheetName];
+        const jsonData = xlsx.utils.sheet_to_json(sheet, { header: 1 });
+        if (jsonData.length > 0 && Array.isArray(jsonData[0])) {
+            event.sender.send('excel-headers-list', jsonData[0].map(String));
+        } else {
+            event.sender.send('excel-headers-list', []);
+        }
+    } catch (error) {
+        console.error(`Error reading Excel headers: ${error.message}`);
+        event.sender.send('excel-headers-list', { error: error.message });
+    }
+});
+
+ipcMain.on('open-screenshot-dir-dialog', (event) => {
+    dialog.showOpenDialog(mainWindow, {
+        properties: ['openDirectory', 'createDirectory']
+    }).then(result => {
+        if (!result.canceled && result.filePaths.length > 0) event.sender.send('selected-screenshot-dir', result.filePaths[0]);
+    }).catch(err => {
+        console.error("Screenshot directory dialog error:", err);
+        sendLog(event.sender, `Screenshot directory dialog error: ${err.message}`, 'error');
+    });
+});
+
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function getRandomDelay(min, max) { return Math.floor(Math.random() * (max - min + 1) + min); }
 
 function sanitizePhoneNumber(number, defaultCountryCode = '') {
-    let phone = String(number).replace(/\D/g, ''); // Remove non-digits
-    if (defaultCountryCode && !phone.startsWith(defaultCountryCode) && phone.length < 11) { // Basic check, adjust as needed
-        phone = defaultCountryCode + phone;
-    }
+    let phone = String(number).replace(/\D/g, '');
+    if (defaultCountryCode && !phone.startsWith(defaultCountryCode) && phone.length === 10) phone = defaultCountryCode + phone;
     return phone;
 }
 
-async function readContacts(filePath) {
+async function readContacts(filePath, webContents) {
     try {
         const workbook = xlsx.readFile(filePath);
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
         return xlsx.utils.sheet_to_json(sheet);
     } catch (error) {
-        console.error(`Error reading Excel file: ${error.message}`);
+        sendLog(webContents, `Error reading Excel file: ${error.message}`, 'error');
         return [];
     }
 }
 
-// --- Main Automation Logic ---
-async function sendWhatsAppMessages() {
-    const contacts = await readContacts(EXCEL_FILE_PATH);
-    if (contacts.length === 0) {
-        console.log('No contacts found in the Excel file or error reading it.');
+function sendLog(webContents, message, type = 'info') {
+    if (webContents && !webContents.isDestroyed()) webContents.send('log-message', { message, type });
+    console.log(`[${type.toUpperCase()}] ${message}`);
+}
+
+ipcMain.on('start-sending-messages', async (event, config) => {
+    const { excelFilePath, messageTemplate, countryCode, phoneNumberColumn, nameColumn, screenshotDir } = config;
+    const webContents = event.sender;
+
+    let actualScreenshotDir = screenshotDir && screenshotDir.trim() !== '' ? screenshotDir : path.join(process.cwd(), 'failure_screenshots');
+    try {
+        if (!fs.existsSync(actualScreenshotDir)) {
+            fs.mkdirSync(actualScreenshotDir, { recursive: true });
+            sendLog(webContents, `Created screenshot directory: ${actualScreenshotDir}`, 'info');
+        } else {
+            sendLog(webContents, `Using screenshot directory: ${actualScreenshotDir}`, 'info');
+        }
+    } catch (dirError) {
+        sendLog(webContents, `Error preparing screenshot directory: ${dirError.message}.`, 'error');
+    }
+
+    if (!phoneNumberColumn || !nameColumn) {
+        sendLog(webContents, 'Error: Column names not specified.', 'error');
+        if (webContents && !webContents.isDestroyed()) webContents.send('process-finished', { successful_messages_count: 0, failed_messages_count: 0, invalid_phone_numbers_count: 0, failed_ids: [], invalid_phone_numbers_ids: [] });
         return;
     }
 
-    console.log(`Found ${contacts.length} contacts. Preparing to send messages...`);
+    sendLog(webContents, `Using Phone: "${phoneNumberColumn}", Name: "${nameColumn}"`, 'info');
+    const contacts = await readContacts(excelFilePath, webContents);
+    if (contacts.length === 0) {
+        sendLog(webContents, 'No contacts or error reading Excel.', 'error');
+        if (webContents && !webContents.isDestroyed()) webContents.send('process-finished', { successful_messages_count: 0, failed_messages_count: 0, invalid_phone_numbers_count: 0, failed_ids: [], invalid_phone_numbers_ids: [] });
+        return;
+    }
+    sendLog(webContents, `Found ${contacts.length} contacts. Processing...`, 'info');
 
-    const browser = await puppeteer.launch(LAUNCH_OPTIONS);
-    const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
-    await page.setViewport({ width: 1200, height: 800 });
-
-    
-
+    let browser, page;
     try {
-        console.log('Navigating to WhatsApp Web...');
-        await page.goto('https://web.whatsapp.com/', { waitUntil: 'networkidle2', timeout: 60000 });
+        browser = await puppeteer.launch(LAUNCH_OPTIONS);
+        page = await browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+        await page.setViewport({ width: 1200, height: 800 });
 
-        console.log('Please scan the QR code if prompted. Waiting for login...');
+        sendLog(webContents, 'Navigating to WhatsApp Web...', 'info');
+        await page.goto('https://web.whatsapp.com/', { waitUntil: 'networkidle2', timeout: 60000 }); // Reduced timeout
+
+        sendLog(webContents, 'Waiting for login (max 60s)...', 'info'); // Reduced timeout
         try {
-            // Wait for either QR code or the main chat interface (if already logged in)
-            await page.waitForSelector(`${QR_CODE_SELECTOR}, ${SEARCH_INPUT_SELECTOR_AFTER_LOGIN}`, { timeout: 90000 }); // 90 seconds to scan
-
-            // Check if QR code is visible, meaning we need to scan
-            const isQrVisible = await page.$(QR_CODE_SELECTOR);
-            if (isQrVisible) {
-                console.log('QR Code detected. Please scan with your phone.');
-                // Wait until QR code disappears (i.e., login is successful)
-                // Or wait for search input to appear
-                await page.waitForSelector(SEARCH_INPUT_SELECTOR_AFTER_LOGIN, { timeout: 0 }); // Wait indefinitely for login
-                console.log('Login successful (QR code scanned or session restored)!');
+            await page.waitForSelector(`${QR_CODE_SELECTOR}, ${SEARCH_INPUT_SELECTOR_AFTER_LOGIN}`, { timeout: 60000 }); // Reduced
+            if (await page.$(QR_CODE_SELECTOR)) {
+                sendLog(webContents, 'QR Code detected. Please scan.', 'info');
+                await page.waitForSelector(SEARCH_INPUT_SELECTOR_AFTER_LOGIN, { timeout: 90000 }); // Reduced (user scan time)
+                sendLog(webContents, 'Login successful!', 'info');
             } else {
-                console.log('Already logged in or session restored.');
+                sendLog(webContents, 'Already logged in/session restored.', 'info');
             }
         } catch (err) {
-            console.error('Login timeout or QR code not found. Please ensure WhatsApp Web loads correctly.', err);
-            await browser.close();
+            sendLog(webContents, `Login failed: ${err.message}`, 'error');
+            if (browser) await browser.close();
+            if (webContents && !webContents.isDestroyed()) webContents.send('error-occurred', `Login failed: ${err.message}`);
             return;
         }
+        await sleep(DELAY_AFTER_LOGIN_CHECK); // Uses reduced constant
 
-        await sleep(DELAY_AFTER_LOGIN_CHECK);
-        
-        let successful_messages_count = 0, failed_messages_count = 0, invalid_phone_numbers_count = 0;
-        let failed_ids = [], invalid_phone_numbers_ids = [];
+        let s_count = 0, f_count = 0, inv_count = 0;
+        let f_ids = [], inv_ids = [];
 
         for (let i = 0; i < contacts.length; i++) {
-
             const contact = contacts[i];
-            const name = contact[NAME_COLUMN] || 'Friend'; // Fallback name
-            let rawPhoneNumber = contact[PHONE_NUMBER_COLUMN];
-
-            if (!rawPhoneNumber) {
-                console.warn(`Skipping contact ${name} due to missing phone number.`);
+            const name = contact[nameColumn] || 'Friend';
+            let rawPhone = contact[phoneNumberColumn];
+            if (!rawPhone) {
+                sendLog(webContents, `Skipping ${name} (Row ${i+2}): missing phone in "${phoneNumberColumn}".`, 'warn');
                 continue;
             }
+            const sanNum = sanitizePhoneNumber(String(rawPhone), countryCode);
+            const finalMsg = messageTemplate.replace(/{{Name}}/g, name);
 
-            const phoneNumber = sanitizePhoneNumber(rawPhoneNumber, COUNTRY_CODE);
-            const message = MESSAGE_TEMPLATE.replace(/{{Name}}/g, name);
-
-            console.log(`\n[${i + 1}/${contacts.length}] Preparing to message ${name} (${phoneNumber})...`);
-
-            const chatUrl = `https://web.whatsapp.com/send?phone=${phoneNumber}&text=${encodeURIComponent('')}&app_absent=0`;
+            sendLog(webContents, `[${i + 1}/${contacts.length}] To: ${name} (${sanNum})...`, 'info');
+            const chatUrl = `https://web.whatsapp.com/send?phone=${sanNum}&text=&app_absent=0`;
 
             try {
-                console.log(`Navigating to chat with ${phoneNumber}...`);
-                await page.goto(chatUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }); // networkidle0 can be slow
-                await sleep(DELAY_PAGE_LOAD); // Extra wait for chat to settle
+                sendLog(webContents, `Navigating to chat: ${sanNum}...`, 'info');
+                await page.goto(chatUrl, { waitUntil: 'domcontentloaded', timeout: 20000 }); // Reduced timeout
+                await sleep(DELAY_PAGE_LOAD); // Uses reduced constant
 
-                // Wait for the message input box to be available
                 try {
-                    await page.waitForSelector(MESSAGE_INPUT_SELECTOR, { visible: true, timeout: 15000 });
+                    await page.waitForFunction(
+                        (popupSel, okBtnSel) => {
+                            const el = document.querySelector('div[role="dialog"]');
+                            if (el && el.innerText.toLowerCase().includes("phone number shared via url is invalid")) {
+                                const okBtn = el.querySelector(okBtnSel);
+                                if (okBtn) okBtn.click();
+                                return true;
+                            } return false;
+                        }, { timeout: 3000 }, // Reduced timeout
+                        INVALID_NUMBER_POPUP_TEXT_SELECTOR, OK_BUTTON_SELECTOR_INVALID_NUMBER
+                    );
+                    sendLog(webContents, `Invalid number popup for ${sanNum} (${name}). Skipping.`, 'warn');
+                    inv_count++; inv_ids.push(name || sanNum);
+                    await sleep(500); continue; // Reduced sleep
                 } catch (e) {
+                    sendLog(webContents, `No invalid number popup for ${sanNum}. Proceeding...`, 'info');
+                }
 
-                     // Check for "Phone number shared via url is invalid."
-                    const invalidNumberError = await page.evaluate(() => {
-                        const el = document.querySelector('div[aria-label="Phone number shared via url is invalid."]'); // This selector might need adjustment
-                        return el && el.innerText.toLowerCase().includes("phone number shared via url is invalid");
-                    });
+                await page.waitForSelector(MESSAGE_INPUT_SELECTOR, { visible: true, timeout: 15000 }); // Reduced timeout
+                await page.focus(MESSAGE_INPUT_SELECTOR);
 
-                    if (invalidNumberError) {
-                        invalid_phone_numbers_count++;
-                        invalid_phone_numbers_ids.push(contact[NAME_COLUMN])
-                        console.warn(`Failed to open chat with ${phoneNumber}: Number might be invalid or not on WhatsApp. Skipping.`);
-                        const okButtonSelector = 'div[data-testid="popup-controls-ok"]';
-                        if (await page.$(okButtonSelector)) {
-                            await page.click(okButtonSelector);
-                            await sleep(1000); // give it a moment
-                        }
-                        continue;
-                    } else {
-                        failed_messages_count++;
-                        failed_ids.push(NAME_COLUMN)
-                        console.error(`Message input box not found for ${phoneNumber} after extended wait. It might be a non-WhatsApp number or a page load issue. Skipping.`);
-                        // Take a screenshot for debugging
-                        await page.screenshot({ path: `error_contact_${phoneNumber}.png` });
-                        console.log(`Screenshot saved to error_contact_${phoneNumber}.png`);
-                        continue;
+                // Clear the input field first
+                await page.evaluate((selector) => {
+                    const el = document.querySelector(selector);
+                    if (el) el.innerHTML = '';
+                }, MESSAGE_INPUT_SELECTOR);
+                await sleep(50); // Reduced sleep
+
+                // Typing logic with multi-paragraph handling, delay: 0
+                sendLog(webContents, `Quickly typing message for ${name}: "${finalMsg.substring(0,40).replace(/\n/g, '\\n')}..."`, 'info');
+                const messageLines = finalMsg.split('\n');
+                for (let j = 0; j < messageLines.length; j++) {
+                    await page.type(MESSAGE_INPUT_SELECTOR, messageLines[j], { delay: 0 }); // delay: 0
+                    if (j < messageLines.length - 1) { // If not the last line
+                        await page.keyboard.down('Shift');
+                        await page.keyboard.press('Enter');
+                        await page.keyboard.up('Shift');
+                        // await sleep(20); // Optional very small delay if issues with Shift+Enter recognition
                     }
                 }
+                
+                await sleep(DELAY_AFTER_TYPING_COMPLETES); // Uses reduced constant
 
-
-                console.log(`Typing message...`);
-                await page.type(MESSAGE_INPUT_SELECTOR, message); // Type slowly
-
-                // Wait for the send button to be available and click it
-                await page.waitForSelector(SEND_BUTTON_SELECTOR, { visible: true, timeout: 10000 });
+                await page.waitForSelector(SEND_BUTTON_SELECTOR, { visible: true, timeout: 5000 }); // Reduced timeout
                 await page.click(SEND_BUTTON_SELECTOR);
-                console.log(`Message sent to ${name} (${phoneNumber})!`);
-
-                await sleep(DELAY_AFTER_SEND);
+                sendLog(webContents, `Message sent to ${name} (${sanNum})!`, 'info');
+                s_count++;
+                await sleep(DELAY_AFTER_SEND); // Uses reduced constant
 
             } catch (err) {
-                console.error(`Failed to send message to ${name} (${phoneNumber}): ${err.message}`);
+                sendLog(webContents, `Failed for ${name} (${sanNum}): ${err.message}`, 'error');
+                f_count++; f_ids.push(name || sanNum);
                 if (err.message.includes('Target closed') || err.message.includes('Page crashed')) {
-                    console.error("Browser or page crashed. Exiting.");
-                    throw err; // Rethrow to stop the process if critical
+                    sendLog(webContents, "Browser/page crashed. Aborting.", 'error'); throw err;
                 }
-                await page.screenshot({ path: `error_send_${phoneNumber}.png` });
-                console.log(`Screenshot saved to error_send_${phoneNumber}.png`);
+                try {
+                    if (page && !page.isClosed()) {
+                        const ssPath = path.join(actualScreenshotDir, `error_${sanNum}_${Date.now()}.png`);
+                        await page.screenshot({ path: ssPath });
+                        sendLog(webContents, `Screenshot: ${ssPath}`, 'warn');
+                    }
+                } catch (scErr) { sendLog(webContents, `Screenshot failed: ${scErr.message}`, 'warn'); }
             }
-
-            const randomDelay = getRandomDelay(DELAY_BETWEEN_MESSAGES_MIN, DELAY_BETWEEN_MESSAGES_MAX);
-            console.log(`Waiting for ${randomDelay / 1000} seconds before next message...`);
-            await sleep(randomDelay);
+            const rndDelay = getRandomDelay(DELAY_BETWEEN_MESSAGES_MIN, DELAY_BETWEEN_MESSAGES_MAX); // Uses reduced constants
+            sendLog(webContents, `Waiting ${rndDelay / 1000}s...`, 'info');
+            await sleep(rndDelay);
         }
-
-        console.log('\nAll messages processed.');
-        console.log(`Stats: \nSuccessful - ${successful_messages_count} \nFailed - ${failed_messages_count} \nInvalid Phone Numbers - ${invalid_phone_numbers_count} \nFailed Phone Numbers - ${failed_ids} \nInvalid Phone Numbers - ${invalid_phone_numbers_ids}`)
-
+        const stats = { successful_messages_count: s_count, failed_messages_count: f_count, invalid_phone_numbers_count: inv_count, failed_ids: f_ids, invalid_phone_numbers_ids: inv_ids };
+        if (webContents && !webContents.isDestroyed()) webContents.send('process-finished', stats);
     } catch (error) {
-        console.error(`An unexpected error occurred: ${error.message}`);
-        if (page) {
-           await page.screenshot({ path: 'critical_error.png' });
-           console.log('Screenshot captured: critical_error.png');
+        sendLog(webContents, `CRITICAL ERROR: ${error.message}`, 'error');
+        if (webContents && !webContents.isDestroyed()) webContents.send('error-occurred', error.message);
+        if (browser && page && !page.isClosed()) {
+           try {
+             const critSsPath = path.join(actualScreenshotDir, `critical_error_${Date.now()}.png`);
+             await page.screenshot({ path: critSsPath });
+             sendLog(webContents, `Crit Screenshot: ${critSsPath}`, 'warn');
+           } catch (scErr) { sendLog(webContents, `Crit Screenshot failed: ${scErr.message}`, 'warn'); }
         }
     } finally {
         if (browser) {
-            console.log('Closing browser...');
+            sendLog(webContents, 'Closing browser...', 'info');
             await browser.close();
         }
     }
-}
-
-// Run the automation
-sendWhatsAppMessages();
+});

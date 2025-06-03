@@ -166,6 +166,8 @@ dist
 *.png
 
 /whatsapp_session
+/failure_screenshots
+forge.config.js
 
 
 # End of https://www.toptal.com/developers/gitignore/api/node,visualstudiocode

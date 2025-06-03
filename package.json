@@ -1,16 +1,55 @@
 {
-  "name": "whatsapp-bulk-message-sender",
+  "name": "whatsapp-bulk-sender-electron",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "Automate WhatsApp bulk messages from Excel using Puppeteer and Electron.",
+  "main": "main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "electron-forge start",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "whatsapp",
+    "puppeteer",
+    "electron",
+    "automation"
+  ],
+  "author": "Keerthi Raajan",
   "license": "ISC",
-  "description": "",
   "dependencies": {
-    "puppeteer": "^24.10.0",
-    "xlsx": "^0.18.5"
+    "electron-squirrel-startup": "^1.0.1",
+    "puppeteer": "latest",
+    "xlsx": "latest"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.8.1",
+    "@electron-forge/maker-deb": "^7.8.1",
+    "@electron-forge/maker-rpm": "^7.8.1",
+    "@electron-forge/maker-squirrel": "^7.8.1",
+    "@electron-forge/maker-zip": "^7.8.1",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.8.1",
+    "@electron-forge/plugin-fuses": "^7.8.1",
+    "@electron/fuses": "^1.8.0",
+    "electron": "^36.3.2"
+  },
+  "config": {
+    "forge" : {
+      "packagerConfig" : {
+        "icon" : "assets/icon",
+        "asar" : true
+      },
+      "rebuildConfig": {},
+      "makers": [
+        {
+          "name": "@electron-forge/maker-squirrel",
+          "platforms": ["win32"],
+          "config": {
+            "name": "BulkWAMessenger", 
+            "setupIcon": "assets/icon.ico"
+          }
+        }
+      ]
+    }
   }
 }
