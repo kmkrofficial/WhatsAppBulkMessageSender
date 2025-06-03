@@ -6,13 +6,12 @@ const fs = require('fs');
 
 if (require('electron-squirrel-startup')) return;
 
-// --- Configuration - Snappier Values ---
-const DELAY_AFTER_LOGIN_CHECK = 2500; // Reduced
-const DELAY_BETWEEN_MESSAGES_MIN = 2000; // Reduced
-const DELAY_BETWEEN_MESSAGES_MAX = 4000; // Reduced
-const DELAY_PAGE_LOAD = 3500; // Reduced (after navigating to chat URL)
-const DELAY_AFTER_SEND = 1500; // Reduced
-const DELAY_AFTER_TYPING_COMPLETES = 300; // Reduced (after all typing is done)
+const DELAY_AFTER_LOGIN_CHECK = 2500;
+const DELAY_BETWEEN_MESSAGES_MIN = 2000;
+const DELAY_BETWEEN_MESSAGES_MAX = 4000;
+const DELAY_PAGE_LOAD = 3500;
+const DELAY_AFTER_SEND = 1500;
+const DELAY_AFTER_TYPING_COMPLETES = 300;
 
 const LAUNCH_OPTIONS = {
     headless: false,
@@ -20,12 +19,11 @@ const LAUNCH_OPTIONS = {
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--disable-gpu']
 };
 
-// Selectors (remain the same)
 const QR_CODE_SELECTOR = 'canvas[aria-label="Scan this QR code to link a device!"], div[data-testid="qrcode"]';
 const SEARCH_INPUT_SELECTOR_AFTER_LOGIN = 'div[aria-label="Chat list"], div[data-testid="chat-list"]';
 const MESSAGE_INPUT_SELECTOR = 'footer div[contenteditable="true"][data-tab="10"], footer div[contenteditable="true"][data-tab="9"]';
 const SEND_BUTTON_SELECTOR = 'button[aria-label="Send"], span[data-icon="send"]';
-const INVALID_NUMBER_POPUP_TEXT_SELECTOR = 'div[role="button"]';
+const INVALID_NUMBER_POPUP_TEXT_SELECTOR = 'div[role="button"]'; // Conceptually used
 const OK_BUTTON_SELECTOR_INVALID_NUMBER = 'div[data-testid="popup-controls-ok"]';
 
 let mainWindow;
@@ -54,10 +52,7 @@ ipcMain.on('open-file-dialog', (event) => {
         filters: [{ name: 'Excel Files', extensions: ['xlsx', 'xls'] }]
     }).then(result => {
         if (!result.canceled && result.filePaths.length > 0) event.sender.send('selected-file', result.filePaths[0]);
-    }).catch(err => {
-        console.error("File dialog error:", err);
-        sendLog(event.sender, `File dialog error: ${err.message}`, 'error');
-    });
+    }).catch(err => sendLog(event.sender, `File dialog error: ${err.message}`, 'error'));
 });
 
 ipcMain.on('get-excel-headers', async (event, filePath) => {
@@ -73,10 +68,7 @@ ipcMain.on('get-excel-headers', async (event, filePath) => {
         } else {
             event.sender.send('excel-headers-list', []);
         }
-    } catch (error) {
-        console.error(`Error reading Excel headers: ${error.message}`);
-        event.sender.send('excel-headers-list', { error: error.message });
-    }
+    } catch (error) { event.sender.send('excel-headers-list', { error: error.message }); }
 });
 
 ipcMain.on('open-screenshot-dir-dialog', (event) => {
@@ -84,10 +76,7 @@ ipcMain.on('open-screenshot-dir-dialog', (event) => {
         properties: ['openDirectory', 'createDirectory']
     }).then(result => {
         if (!result.canceled && result.filePaths.length > 0) event.sender.send('selected-screenshot-dir', result.filePaths[0]);
-    }).catch(err => {
-        console.error("Screenshot directory dialog error:", err);
-        sendLog(event.sender, `Screenshot directory dialog error: ${err.message}`, 'error');
-    });
+    }).catch(err => sendLog(event.sender, `Screenshot directory dialog error: ${err.message}`, 'error'));
 });
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -127,41 +116,58 @@ ipcMain.on('start-sending-messages', async (event, config) => {
         } else {
             sendLog(webContents, `Using screenshot directory: ${actualScreenshotDir}`, 'info');
         }
-    } catch (dirError) {
-        sendLog(webContents, `Error preparing screenshot directory: ${dirError.message}.`, 'error');
-    }
+    } catch (dirError) { sendLog(webContents, `Error preparing screenshot directory: ${dirError.message}.`, 'error'); }
 
     if (!phoneNumberColumn || !nameColumn) {
         sendLog(webContents, 'Error: Column names not specified.', 'error');
-        if (webContents && !webContents.isDestroyed()) webContents.send('process-finished', { successful_messages_count: 0, failed_messages_count: 0, invalid_phone_numbers_count: 0, failed_ids: [], invalid_phone_numbers_ids: [] });
+        if (webContents && !webContents.isDestroyed()) {
+             webContents.send('update-progress', { percentage: 100, etaFormatted: 'Error!', totalContacts: 0, processedCount: 0, successful: 0, failed: 0, invalid: 0 });
+             webContents.send('process-finished', { totalContacts: 0, successful_messages_count: 0, failed_messages_count: 0, invalid_phone_numbers_count: 0, failed_ids: [], invalid_phone_numbers_ids: [] });
+        }
         return;
     }
 
     sendLog(webContents, `Using Phone: "${phoneNumberColumn}", Name: "${nameColumn}"`, 'info');
     const contacts = await readContacts(excelFilePath, webContents);
-    if (contacts.length === 0) {
+    const totalContacts = contacts.length;
+
+    if (totalContacts === 0) {
         sendLog(webContents, 'No contacts or error reading Excel.', 'error');
-        if (webContents && !webContents.isDestroyed()) webContents.send('process-finished', { successful_messages_count: 0, failed_messages_count: 0, invalid_phone_numbers_count: 0, failed_ids: [], invalid_phone_numbers_ids: [] });
+        if (webContents && !webContents.isDestroyed()) {
+            webContents.send('update-progress', { percentage: 100, etaFormatted: 'N/A', totalContacts: 0, processedCount: 0, successful: 0, failed: 0, invalid: 0 });
+            webContents.send('process-finished', { totalContacts: 0, successful_messages_count: 0, failed_messages_count: 0, invalid_phone_numbers_count: 0, failed_ids: [], invalid_phone_numbers_ids: [] });
+        }
         return;
     }
-    sendLog(webContents, `Found ${contacts.length} contacts. Processing...`, 'info');
+    sendLog(webContents, `Found ${totalContacts} contacts. Processing...`, 'info');
 
     let browser, page;
+    const startTime = Date.now(); 
+    let s_count = 0, f_count = 0, inv_count = 0, processed_count = 0;
+    let f_ids = [], inv_ids = [];
+
+    if (webContents && !webContents.isDestroyed()) {
+        webContents.send('update-progress', {
+            percentage: 0, etaFormatted: 'Calculating...', totalContacts: totalContacts, 
+            processedCount: 0, successful: 0, failed: 0, invalid: 0
+        });
+    }
+
     try {
         browser = await puppeteer.launch(LAUNCH_OPTIONS);
         page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36'); // Updated User Agent
         await page.setViewport({ width: 1200, height: 800 });
 
         sendLog(webContents, 'Navigating to WhatsApp Web...', 'info');
-        await page.goto('https://web.whatsapp.com/', { waitUntil: 'networkidle2', timeout: 60000 }); // Reduced timeout
+        await page.goto('https://web.whatsapp.com/', { waitUntil: 'networkidle2', timeout: 60000 });
 
-        sendLog(webContents, 'Waiting for login (max 60s)...', 'info'); // Reduced timeout
+        sendLog(webContents, 'Waiting for login (max 60s)...', 'info');
         try {
-            await page.waitForSelector(`${QR_CODE_SELECTOR}, ${SEARCH_INPUT_SELECTOR_AFTER_LOGIN}`, { timeout: 60000 }); // Reduced
+            await page.waitForSelector(`${QR_CODE_SELECTOR}, ${SEARCH_INPUT_SELECTOR_AFTER_LOGIN}`, { timeout: 60000 });
             if (await page.$(QR_CODE_SELECTOR)) {
                 sendLog(webContents, 'QR Code detected. Please scan.', 'info');
-                await page.waitForSelector(SEARCH_INPUT_SELECTOR_AFTER_LOGIN, { timeout: 90000 }); // Reduced (user scan time)
+                await page.waitForSelector(SEARCH_INPUT_SELECTOR_AFTER_LOGIN, { timeout: 90000 });
                 sendLog(webContents, 'Login successful!', 'info');
             } else {
                 sendLog(webContents, 'Already logged in/session restored.', 'info');
@@ -169,112 +175,168 @@ ipcMain.on('start-sending-messages', async (event, config) => {
         } catch (err) {
             sendLog(webContents, `Login failed: ${err.message}`, 'error');
             if (browser) await browser.close();
-            if (webContents && !webContents.isDestroyed()) webContents.send('error-occurred', `Login failed: ${err.message}`);
+            if (webContents && !webContents.isDestroyed()) {
+                webContents.send('update-progress', { percentage: 0, etaFormatted: 'Login Error!', totalContacts: totalContacts, processedCount: 0, successful: 0, failed: 0, invalid: 0 });
+                webContents.send('error-occurred', `Login failed: ${err.message}`);
+            }
             return;
         }
-        await sleep(DELAY_AFTER_LOGIN_CHECK); // Uses reduced constant
-
-        let s_count = 0, f_count = 0, inv_count = 0;
-        let f_ids = [], inv_ids = [];
+        await sleep(DELAY_AFTER_LOGIN_CHECK);
 
         for (let i = 0; i < contacts.length; i++) {
             const contact = contacts[i];
             const name = contact[nameColumn] || 'Friend';
             let rawPhone = contact[phoneNumberColumn];
+            
+            let messageSentThisIteration = false;
+            let invalidNumberThisIteration = false;
+            let failedThisIteration = false;
+
             if (!rawPhone) {
                 sendLog(webContents, `Skipping ${name} (Row ${i+2}): missing phone in "${phoneNumberColumn}".`, 'warn');
-                continue;
+                invalidNumberThisIteration = true;
             }
-            const sanNum = sanitizePhoneNumber(String(rawPhone), countryCode);
+            
+            const sanNum = invalidNumberThisIteration ? "N/A" : sanitizePhoneNumber(String(rawPhone), countryCode);
             const finalMsg = messageTemplate.replace(/{{Name}}/g, name);
 
-            sendLog(webContents, `[${i + 1}/${contacts.length}] To: ${name} (${sanNum})...`, 'info');
-            const chatUrl = `https://web.whatsapp.com/send?phone=${sanNum}&text=&app_absent=0`;
-
-            try {
-                sendLog(webContents, `Navigating to chat: ${sanNum}...`, 'info');
-                await page.goto(chatUrl, { waitUntil: 'domcontentloaded', timeout: 20000 }); // Reduced timeout
-                await sleep(DELAY_PAGE_LOAD); // Uses reduced constant
-
+            if (!invalidNumberThisIteration) {
+                sendLog(webContents, `[${i + 1}/${totalContacts}] To: ${name} (${sanNum})...`, 'info');
+                const chatUrl = `https://web.whatsapp.com/send?phone=${sanNum}&text=&app_absent=0`;
                 try {
-                    await page.waitForFunction(
-                        (popupSel, okBtnSel) => {
-                            const el = document.querySelector('div[role="dialog"]');
-                            if (el && el.innerText.toLowerCase().includes("phone number shared via url is invalid")) {
-                                const okBtn = el.querySelector(okBtnSel);
-                                if (okBtn) okBtn.click();
-                                return true;
-                            } return false;
-                        }, { timeout: 3000 }, // Reduced timeout
-                        INVALID_NUMBER_POPUP_TEXT_SELECTOR, OK_BUTTON_SELECTOR_INVALID_NUMBER
-                    );
-                    sendLog(webContents, `Invalid number popup for ${sanNum} (${name}). Skipping.`, 'warn');
-                    inv_count++; inv_ids.push(name || sanNum);
-                    await sleep(500); continue; // Reduced sleep
-                } catch (e) {
-                    sendLog(webContents, `No invalid number popup for ${sanNum}. Proceeding...`, 'info');
-                }
+                    sendLog(webContents, `Navigating to chat: ${sanNum}...`, 'info');
+                    await page.goto(chatUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+                    await sleep(DELAY_PAGE_LOAD);
 
-                await page.waitForSelector(MESSAGE_INPUT_SELECTOR, { visible: true, timeout: 15000 }); // Reduced timeout
-                await page.focus(MESSAGE_INPUT_SELECTOR);
-
-                // Clear the input field first
-                await page.evaluate((selector) => {
-                    const el = document.querySelector(selector);
-                    if (el) el.innerHTML = '';
-                }, MESSAGE_INPUT_SELECTOR);
-                await sleep(50); // Reduced sleep
-
-                // Typing logic with multi-paragraph handling, delay: 0
-                sendLog(webContents, `Quickly typing message for ${name}: "${finalMsg.substring(0,40).replace(/\n/g, '\\n')}..."`, 'info');
-                const messageLines = finalMsg.split('\n');
-                for (let j = 0; j < messageLines.length; j++) {
-                    await page.type(MESSAGE_INPUT_SELECTOR, messageLines[j], { delay: 0 }); // delay: 0
-                    if (j < messageLines.length - 1) { // If not the last line
-                        await page.keyboard.down('Shift');
-                        await page.keyboard.press('Enter');
-                        await page.keyboard.up('Shift');
-                        // await sleep(20); // Optional very small delay if issues with Shift+Enter recognition
+                    try {
+                        await page.waitForFunction(
+                            (okBtnSel) => { // Removed unused popupSel parameter
+                                const el = document.querySelector('div[role="dialog"]');
+                                if (el && el.innerText.toLowerCase().includes("phone number shared via url is invalid")) {
+                                    const okBtn = el.querySelector(okBtnSel);
+                                    if (okBtn) okBtn.click();
+                                    return true;
+                                } return false;
+                            }, { timeout: 3000 }, OK_BUTTON_SELECTOR_INVALID_NUMBER // Pass only okBtnSel
+                        );
+                        sendLog(webContents, `Invalid number popup for ${sanNum} (${name}). Skipping.`, 'warn');
+                        invalidNumberThisIteration = true;
+                        await sleep(500);
+                    } catch (e) {
+                        sendLog(webContents, `No invalid number popup for ${sanNum}. Proceeding...`, 'info');
                     }
-                }
-                
-                await sleep(DELAY_AFTER_TYPING_COMPLETES); // Uses reduced constant
 
-                await page.waitForSelector(SEND_BUTTON_SELECTOR, { visible: true, timeout: 5000 }); // Reduced timeout
-                await page.click(SEND_BUTTON_SELECTOR);
-                sendLog(webContents, `Message sent to ${name} (${sanNum})!`, 'info');
-                s_count++;
-                await sleep(DELAY_AFTER_SEND); // Uses reduced constant
+                    if (!invalidNumberThisIteration) {
+                        await page.waitForSelector(MESSAGE_INPUT_SELECTOR, { visible: true, timeout: 15000 });
+                        await page.focus(MESSAGE_INPUT_SELECTOR);
+                        await page.evaluate((selector) => {
+                            const el = document.querySelector(selector); if (el) el.innerHTML = '';
+                        }, MESSAGE_INPUT_SELECTOR);
+                        await sleep(50);
 
-            } catch (err) {
-                sendLog(webContents, `Failed for ${name} (${sanNum}): ${err.message}`, 'error');
-                f_count++; f_ids.push(name || sanNum);
-                if (err.message.includes('Target closed') || err.message.includes('Page crashed')) {
-                    sendLog(webContents, "Browser/page crashed. Aborting.", 'error'); throw err;
-                }
-                try {
-                    if (page && !page.isClosed()) {
-                        const ssPath = path.join(actualScreenshotDir, `error_${sanNum}_${Date.now()}.png`);
-                        await page.screenshot({ path: ssPath });
-                        sendLog(webContents, `Screenshot: ${ssPath}`, 'warn');
+                        const messageLines = finalMsg.split('\n');
+                        for (let j = 0; j < messageLines.length; j++) {
+                            await page.type(MESSAGE_INPUT_SELECTOR, messageLines[j], { delay: 0 });
+                            if (j < messageLines.length - 1) {
+                                await page.keyboard.down('Shift');
+                                await page.keyboard.press('Enter');
+                                await page.keyboard.up('Shift');
+                            }
+                        }
+                        await sleep(DELAY_AFTER_TYPING_COMPLETES);
+                        await page.waitForSelector(SEND_BUTTON_SELECTOR, { visible: true, timeout: 5000 });
+                        await page.click(SEND_BUTTON_SELECTOR);
+                        sendLog(webContents, `Message sent to ${name} (${sanNum})!`, 'info');
+                        messageSentThisIteration = true;
+                        await sleep(DELAY_AFTER_SEND);
                     }
-                } catch (scErr) { sendLog(webContents, `Screenshot failed: ${scErr.message}`, 'warn'); }
+                } catch (err) {
+                    sendLog(webContents, `Failed for ${name} (${sanNum}): ${err.message}`, 'error');
+                    failedThisIteration = true;
+                    if (err.message.includes('Target closed') || err.message.includes('Page crashed')) {
+                        sendLog(webContents, "Browser/page crashed. Aborting.", 'error'); throw err;
+                    }
+                    try {
+                        if (page && !page.isClosed()) {
+                            const ssPath = path.join(actualScreenshotDir, `error_${sanNum}_${Date.now()}.png`);
+                            await page.screenshot({ path: ssPath });
+                            sendLog(webContents, `Screenshot: ${ssPath}`, 'warn');
+                        }
+                    } catch (scErr) { sendLog(webContents, `Screenshot failed: ${scErr.message}`, 'warn'); }
+                }
             }
-            const rndDelay = getRandomDelay(DELAY_BETWEEN_MESSAGES_MIN, DELAY_BETWEEN_MESSAGES_MAX); // Uses reduced constants
-            sendLog(webContents, `Waiting ${rndDelay / 1000}s...`, 'info');
-            await sleep(rndDelay);
+
+            processed_count++;
+            if (invalidNumberThisIteration) {
+                inv_count++;
+                if (nameColumn && contact[nameColumn]) inv_ids.push(contact[nameColumn]); else inv_ids.push(sanNum === "N/A" ? "Missing Phone" : sanNum);
+            } else if (failedThisIteration) {
+                f_count++;
+                if (nameColumn && contact[nameColumn]) f_ids.push(contact[nameColumn]); else f_ids.push(sanNum);
+            } else if (messageSentThisIteration) {
+                s_count++;
+            }
+
+            const percentage = (processed_count / totalContacts) * 100;
+            const elapsedTime = (Date.now() - startTime) / 1000;
+            const timePerMessage = processed_count > 0 ? elapsedTime / processed_count : 0;
+            const remainingMessages = totalContacts - processed_count;
+            const etaSeconds = remainingMessages * timePerMessage;
+            let etaFormatted = 'Calculating...';
+
+            if (processed_count > 0 && remainingMessages >= 0) {
+                if (etaSeconds === Infinity || isNaN(etaSeconds) || etaSeconds < 0) { // Added check for etaSeconds < 0
+                    etaFormatted = remainingMessages === 0 ? 'Done!' : 'Calculating...';
+                } else if (remainingMessages === 0) {
+                    etaFormatted = 'Finishing up...';
+                } else {
+                    const hours = Math.floor(etaSeconds / 3600);
+                    const minutes = Math.floor((etaSeconds % 3600) / 60);
+                    const seconds = Math.floor(etaSeconds % 60);
+                    etaFormatted = '';
+                    if (hours > 0) etaFormatted += `${hours}h `;
+                    if (minutes > 0 || hours > 0) etaFormatted += `${minutes}m `;
+                    etaFormatted += `${seconds}s`;
+                    if (etaFormatted.trim() === '0s' && remainingMessages > 0) etaFormatted = "<1s ea, soon";
+                    else if (etaFormatted.trim() === '0s' && remainingMessages === 0) etaFormatted = "Done!";
+                }
+            }
+            
+            if (webContents && !webContents.isDestroyed()) {
+                webContents.send('update-progress', {
+                    percentage: percentage, etaFormatted: etaFormatted, totalContacts: totalContacts,
+                    processedCount: processed_count, successful: s_count, failed: f_count, invalid: inv_count
+                });
+            }
+            
+            if (i < totalContacts - 1) {
+                const rndDelay = getRandomDelay(DELAY_BETWEEN_MESSAGES_MIN, DELAY_BETWEEN_MESSAGES_MAX);
+                sendLog(webContents, `Waiting ${rndDelay / 1000}s...`, 'info');
+                await sleep(rndDelay);
+            }
         }
-        const stats = { successful_messages_count: s_count, failed_messages_count: f_count, invalid_phone_numbers_count: inv_count, failed_ids: f_ids, invalid_phone_numbers_ids: inv_ids };
-        if (webContents && !webContents.isDestroyed()) webContents.send('process-finished', stats);
+
+        const finalStats = {
+            totalContacts: totalContacts, successful_messages_count: s_count, failed_messages_count: f_count,
+            invalid_phone_numbers_count: inv_count, failed_ids: f_ids, invalid_phone_numbers_ids: inv_ids
+        };
+        if (webContents && !webContents.isDestroyed()) {
+             webContents.send('update-progress', {
+                percentage: 100, etaFormatted: 'Completed!', totalContacts: totalContacts,
+                processedCount: totalContacts, successful: s_count, failed: f_count, invalid: inv_count
+            });
+            webContents.send('process-finished', finalStats);
+        }
+
     } catch (error) {
         sendLog(webContents, `CRITICAL ERROR: ${error.message}`, 'error');
-        if (webContents && !webContents.isDestroyed()) webContents.send('error-occurred', error.message);
-        if (browser && page && !page.isClosed()) {
-           try {
-             const critSsPath = path.join(actualScreenshotDir, `critical_error_${Date.now()}.png`);
-             await page.screenshot({ path: critSsPath });
-             sendLog(webContents, `Crit Screenshot: ${critSsPath}`, 'warn');
-           } catch (scErr) { sendLog(webContents, `Crit Screenshot failed: ${scErr.message}`, 'warn'); }
+        if (webContents && !webContents.isDestroyed()) {
+             webContents.send('update-progress', {
+                percentage: (processed_count / totalContacts) * 100, etaFormatted: 'Error!',
+                totalContacts: totalContacts, processedCount: processed_count, successful: s_count,
+                failed: f_count, invalid: inv_count
+            });
+            webContents.send('error-occurred', error.message);
         }
     } finally {
         if (browser) {

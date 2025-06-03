@@ -16,7 +16,18 @@ body {
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
+.logo-container {
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+#appLogo {
+    max-width: 80px; 
+    max-height: 80px; 
+}
+
 h1 {
+    margin-top: 0; 
     color: #2c3e50;
     text-align: center;
     margin-bottom: 25px;
@@ -27,6 +38,13 @@ h2 {
     margin-top: 30px;
     border-bottom: 1px solid #eee;
     padding-bottom: 5px;
+}
+
+h3 {
+    color: #34495e;
+    margin-top: 20px;
+    margin-bottom: 10px;
+    font-size: 1.1em;
 }
 
 .form-group {
@@ -41,14 +59,17 @@ label {
 }
 
 input[type="text"],
-textarea {
-    width: calc(100% - 22px); /* Account for padding */
+textarea,
+select { /* Added select here */
+    width: 100%; /* Changed from calc for simplicity with box-sizing */
     padding: 10px;
     border: 1px solid #ddd;
     border-radius: 4px;
-    box-sizing: border-box; /* Important */
+    box-sizing: border-box; 
     font-size: 1em;
+    margin-top: 2px; /* Small spacing for select */
 }
+
 
 textarea {
     resize: vertical;
@@ -94,8 +115,8 @@ pre#logOutput {
     border: 1px solid #bdc3c7;
     padding: 15px;
     border-radius: 4px;
-    white-space: pre-wrap; /* Allows text to wrap */
-    word-wrap: break-word; /* Breaks long words */
+    white-space: pre-wrap; 
+    word-wrap: break-word; 
     max-height: 300px;
     overflow-y: auto;
     font-family: "Courier New", Courier, monospace;
@@ -103,7 +124,7 @@ pre#logOutput {
 }
 
 #selectScreenshotDirBtn, #useDefaultScreenshotDirBtn {
-    background-color: #95a5a6; /* A neutral color */
+    background-color: #95a5a6; 
     margin-top: 5px;
     margin-right: 5px;
     padding: 8px 12px;
@@ -115,23 +136,66 @@ pre#logOutput {
 }
 
 #screenshotDirInput {
-    margin-bottom: 5px; /* Add some space if buttons wrap */
+    margin-bottom: 5px; 
 }
 
-.logo-container {
+/* --- Progress Bar Styles --- */
+#progressSection {
+    margin-top: 25px;
+    padding: 15px;
+    border: 1px solid #e0e0e0;
+    border-radius: 5px;
+    background-color: #f9f9f9;
+}
+
+.progress-bar-container {
+    width: 100%;
+    background-color: #e0e0e0;
+    border-radius: 5px;
+    margin-bottom: 8px;
+    height: 25px; 
+    overflow: hidden; 
+}
+
+#progressBar {
+    width: 0%; 
+    height: 100%;
+    background-color: #4CAF50; 
+    text-align: center; 
+    line-height: 25px; 
+    color: white;
+    transition: width 0.3s ease-in-out; 
+    border-radius: 5px; 
+}
+
+#progressText {
     text-align: center;
-    margin-bottom: 15px;
+    font-weight: bold;
+    margin-bottom: 10px;
 }
 
-#appLogo {
-    max-width: 80px; /* Adjust size as needed */
-    max-height: 80px; /* Adjust size as needed */
+/* --- Stats Grid Styles --- */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); /* Adjusted minmax for better fit */
+    gap: 10px; 
+    margin-top: 10px;
 }
 
-h1 {
-    /* Potentially adjust margin-top if logo is above it */
-    margin-top: 0; /* If logo is directly above */
-    color: #2c3e50;
-    text-align: center;
-    margin-bottom: 25px;
+.stats-grid p {
+    background-color: #fff;
+    padding: 10px; /* Increased padding */
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9em; /* Slightly reduced font size */
+    margin: 0; 
+    display: flex; /* For better alignment of text and span */
+    justify-content: space-between; /* Pushes span to the right */
+    align-items: center; /* Vertically aligns items */
+}
+
+.stats-grid p span {
+    font-weight: bold;
+    /* float: right; Removed, using flexbox now */
+    margin-left: 8px; /* Add some space between label and value */
 }

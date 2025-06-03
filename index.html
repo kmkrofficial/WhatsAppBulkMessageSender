@@ -53,6 +53,25 @@
 
         <button id="startBtn">Start Sending Messages</button>
 
+        <div id="progressSection" style="display: none;">
+            <h2>Progress</h2>
+            <div class="progress-bar-container">
+                <div id="progressBar" class="progress-bar-fill"></div>
+            </div>
+            <p id="progressText">0%</p>
+            <p>Estimated Time Remaining: <span id="etaText">Calculating...</span></p>
+            
+            <h3>Live Statistics:</h3>
+            <div class="stats-grid">
+                <p>Total Contacts: <span id="statTotalContacts">0</span></p>
+                <p>Processed: <span id="statProcessed">0</span></p>
+                <p>Successful: <span id="statSuccessful">0</span></p>
+                <p>Failed: <span id="statFailed">0</span></p>
+                <p>Invalid Numbers: <span id="statInvalid">0</span></p>
+                <p>Remaining: <span id="statRemaining">0</span></p>
+            </div>
+        </div>
+
         <h2>Log Output:</h2>
         <pre id="logOutput"></pre>
     </div>
