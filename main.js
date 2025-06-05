@@ -4,11 +4,13 @@ const puppeteer = require('puppeteer');
 const xlsx =require('xlsx');
 const fs = require('fs');
 
-if (require('electron-squirrel-startup')) return;
+if (require('electron-squirrel-startup')) {
+  app.quit();
+}
 
 const DELAY_AFTER_LOGIN_CHECK = 2500;
 const DELAY_BETWEEN_MESSAGES_MIN = 2000;
-const DELAY_BETWEEN_MESSAGES_MAX = 4000;
+const DELAY_BETWEEN_MESSAGES_MAX = 3000;
 const DELAY_PAGE_LOAD = 3500;
 const DELAY_AFTER_SEND = 1500;
 const DELAY_AFTER_TYPING_COMPLETES = 300;
@@ -16,6 +18,7 @@ const DELAY_AFTER_TYPING_COMPLETES = 300;
 const LAUNCH_OPTIONS = {
     headless: false,
     userDataDir: path.join(app.getPath('userData'), 'whatsapp_session_electron'),
+    executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--disable-gpu']
 };
 
@@ -23,7 +26,6 @@ const QR_CODE_SELECTOR = 'canvas[aria-label="Scan this QR code to link a device!
 const SEARCH_INPUT_SELECTOR_AFTER_LOGIN = 'div[aria-label="Chat list"], div[data-testid="chat-list"]';
 const MESSAGE_INPUT_SELECTOR = 'footer div[contenteditable="true"][data-tab="10"], footer div[contenteditable="true"][data-tab="9"]';
 const SEND_BUTTON_SELECTOR = 'button[aria-label="Send"], span[data-icon="send"]';
-const INVALID_NUMBER_POPUP_TEXT_SELECTOR = 'div[role="button"]'; // Conceptually used
 const OK_BUTTON_SELECTOR_INVALID_NUMBER = 'div[data-testid="popup-controls-ok"]';
 
 let mainWindow;

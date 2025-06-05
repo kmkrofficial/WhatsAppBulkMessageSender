@@ -1,6 +1,6 @@
 {
   "name": "whatsapp-bulk-sender-electron",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Automate WhatsApp bulk messages from Excel using Puppeteer and Electron.",
   "main": "main.js",
   "scripts": {
