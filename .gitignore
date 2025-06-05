@@ -163,8 +163,6 @@ dist
 .plugins
 *.xlsx
 
-*.png
-
 /whatsapp_session
 /failure_screenshots
 forge.config.js
