@@ -1,10 +1,10 @@
 # WhatsApp Bulk Message Sender (Electron & Puppeteer)
 
-![App Logo](./assets/logo.png)
+![App Logo](https://github.com/kmkrofficial/WhatsAppBulkMessageSender/blob/main/assets/logo.png)
 
 This desktop application allows you to automate sending bulk WhatsApp messages from an Excel spreadsheet. It uses Electron to create a cross-platform desktop experience and Puppeteer to interact with WhatsApp Web.
 
-![App Working](./assets/recording.gif)
+![App Working](https://github.com/kmkrofficial/WhatsAppBulkMessageSender/blob/main/assets/recording.gif)
 
 ## Table of Contents
 
